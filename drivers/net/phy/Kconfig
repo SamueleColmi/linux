@@ -72,6 +72,15 @@ config SFP
 	depends on HWMON || HWMON=n
 	select MDIO_I2C
 
+config AR8216_PHY
+	tristate "Driver for Atheros AR8216 switches"
+	select ETHERNET_PACKET_MANGLE
+	select SWCONFIG
+
+config AR8216_PHY_LEDS
+	bool "Atheros AR8216 switch LED support"
+	depends on (AR8216_PHY && LEDS_CLASS)
+
 comment "MII PHY device drivers"
 
 config AMD_PHY

@@ -26,6 +26,8 @@ obj-$(CONFIG_PHYLIB)		+= libphy.o
 
 obj-$(CONFIG_SWCONFIG)         += swconfig.o
 
+obj-$(CONFIG_AR8216_PHY)	+= ar8216.o ar8327.o
+
 obj-$(CONFIG_NETWORK_PHY_TIMESTAMPING) += mii_timestamper.o
 
 obj-$(CONFIG_SFP)		+= sfp.o
