@@ -4,7 +4,7 @@
  * drivers and users.
  *
  * Copyright © 1999-2010 David Woodhouse <dwmw2@infradead.org>
- * Copyright © 2006      Red Hat UK Limited 
+ * Copyright © 2006      Red Hat UK Limited
  */
 
 #include <linux/module.h>
@@ -27,6 +27,7 @@
 #include <linux/reboot.h>
 #include <linux/leds.h>
 #include <linux/debugfs.h>
+#include <linux/root_dev.h>
 #include <linux/nvmem-provider.h>
 
 #include <linux/mtd/mtd.h>
@@ -748,6 +749,15 @@ int add_mtd_device(struct mtd_info *mtd)
 	   of this try_ nonsense, and no bitching about it
 	   either. :) */
 	__module_get(THIS_MODULE);
+
+	if (!strcmp(mtd->name, "rootfs") &&
+		IS_ENABLED(CONFIG_MTD_ROOTFS_ROOT_DEV) &&
+		ROOT_DEV == 0) {
+		pr_notice("mtd: device %d (%s) set to be root filesystem\n",
+			mtd->index, mtd->name);
+		ROOT_DEV = MKDEV(MTD_BLOCK_MAJOR, mtd->index);
+	}
+
 	return 0;
 
 fail_nvmem_add:
@@ -2443,7 +2453,7 @@ static struct backing_dev_info * __init mtd_bdi_init(const char *name)
 
 	/*
 	 * We put '-0' suffix to the name to get the same name format as we
-	 * used to get. Since this is called only once, we get a unique name. 
+	 * used to get. Since this is called only once, we get a unique name.
 	 */
 	ret = bdi_register(bdi, "%.28s-0", name);
 	if (ret)

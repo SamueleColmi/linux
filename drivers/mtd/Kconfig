@@ -12,6 +12,10 @@ menuconfig MTD
 
 if MTD
 
+config MTD_ROOTFS_ROOT_DEV
+	bool "Automatically set 'rootfs' partition to be the root filesystem"
+	default n
+
 config MTD_TESTS
 	tristate "MTD tests support (DANGEROUS)"
 	depends on m
@@ -25,6 +29,10 @@ config MTD_TESTS
 
 menu "Partition parsers"
 source "drivers/mtd/parsers/Kconfig"
+endmenu
+
+menu "MTD split support"
+source "drivers/mtd/mtdsplit/Kconfig"
 endmenu
 
 comment "User Modules And Translation Layers"

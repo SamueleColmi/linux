@@ -21,6 +21,11 @@
 
 #include "mtdcore.h"
 
+static int parse_mtd_partitions_by_type(struct mtd_info *master,
+					enum mtd_parser_type type,
+					const struct mtd_partition **pparts,
+					struct mtd_part_parser_data *data);
+
 /*
  * MTD methods which simply translate the effective address and pass through
  * to the _real_ device.
@@ -381,6 +386,50 @@ int mtd_del_partition(struct mtd_info *mtd, int partno)
 }
 EXPORT_SYMBOL_GPL(mtd_del_partition);
 
+static int
+run_parsers_by_type(struct mtd_part *slave, enum mtd_parser_type type)
+{
+	struct mtd_partition *parts;
+	int nr_parts;
+	int i;
+
+	nr_parts = parse_mtd_partitions_by_type(&slave->mtd, type,
+						(const struct mtd_partition **)&parts,
+						NULL);
+	if (nr_parts <= 0)
+	return nr_parts;
+
+	if (WARN_ON(!parts))
+		return 0;
+
+	for (i = 0; i < nr_parts; i++) {
+		/* adjust partition offsets */
+		parts[i].offset += slave->offset;
+
+		mtd_add_partition(slave->parent,
+				  parts[i].name,
+				  parts[i].offset,
+				  parts[i].size);
+	}
+
+	kfree(parts);
+
+	return nr_parts;
+}
+
+static void mtd_rootfs_split(struct mtd_info *master, struct mtd_part *part)
+{
+	static int rootfs_found = 0;
+
+	if (rootfs_found)
+		return;
+
+	if (!strcmp(part->mtd.name, "rootfs")) {
+		run_parsers_by_type(part, MTD_PARSER_TYPE_ROOTFS);
+		rootfs_found = 1;
+	}
+}
+
 /*
  * This function, given a parent MTD object and a partition table, creates
  * and registers the child MTD objects which are bound to the parent according
@@ -422,6 +471,7 @@ int add_mtd_partitions(struct mtd_info *parent,
 			goto err_del_partitions;
 		}
 
+		mtd_rootfs_split(master, child);
 		mtd_add_partition_attrs(child);
 
 		/* Look for subpartitions */
@@ -715,6 +765,79 @@ void mtd_part_parser_cleanup(struct mtd_partitions *parts)
 		mtd_part_parser_put(parser);
 	}
 }
+
+static struct mtd_part_parser *
+get_partition_parser_by_type(enum mtd_parser_type type,
+			     struct mtd_part_parser *start)
+{
+	struct mtd_part_parser *p, *ret = NULL;
+
+	spin_lock(&part_parser_lock);
+
+	p = list_prepare_entry(start, &part_parsers, list);
+	if (start)
+		mtd_part_parser_put(start);
+
+	list_for_each_entry_continue(p, &part_parsers, list) {
+		if (p->type == type && try_module_get(p->owner)) {
+			ret = p;
+			break;
+		}
+	}
+
+	spin_unlock(&part_parser_lock);
+
+	return ret;
+}
+
+static int parse_mtd_partitions_by_type(struct mtd_info *master,
+					enum mtd_parser_type type,
+					const struct mtd_partition **pparts,
+					struct mtd_part_parser_data *data)
+{
+	struct mtd_part_parser *prev = NULL;
+	int ret = 0;
+
+	while (1) {
+		struct mtd_part_parser *parser;
+
+		parser = get_partition_parser_by_type(type, prev);
+		if (!parser)
+			break;
+
+		ret = (*parser->parse_fn)(master, pparts, data);
+
+		if (ret > 0) {
+			mtd_part_parser_put(parser);
+			printk(KERN_NOTICE
+			       "%d %s partitions found on MTD device %s\n",
+			       ret, parser->name, master->name);
+			break;
+		}
+
+		prev = parser;
+	}
+
+	return ret;
+}
+
+struct mtd_info *mtdpart_get_master(const struct mtd_info *mtd)
+{
+	if (!mtd_is_partition(mtd))
+		return (struct mtd_info *)mtd;
+
+	return mtd_to_part(mtd)->parent;
+}
+EXPORT_SYMBOL_GPL(mtdpart_get_master);
+
+uint64_t mtdpart_get_offset(const struct mtd_info *mtd)
+{
+	if (!mtd_is_partition(mtd))
+		return 0;
+
+	return mtd_to_part(mtd)->offset;
+}
+EXPORT_SYMBOL_GPL(mtdpart_get_offset);
 
 /* Returns the size of the entire flash chip */
 uint64_t mtd_get_device_size(const struct mtd_info *mtd)
